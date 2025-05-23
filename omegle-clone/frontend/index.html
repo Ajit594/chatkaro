@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Omegle Clone</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Anonymous Chat</h1>
+    <div id="status">Welcome! Click "Find Match" to start.</div>
+    <div id="controls">
+        <button id="findMatchBtn">Find Match</button>
+        <button id="nextMatchBtn" style="display: none;">Next Match</button> 
+    </div>
+    <div id="chatBox" style="display: none;">
+        <div id="messages"></div>
+        <input type="text" id="messageInput" placeholder="Type your message...">
+        <button id="sendBtn">Send</button>
+        <button id="leaveChatBtn" style="display: none;">Leave Chat</button>
+    </div>
+    <script src="/socket.io/socket.io.js"></script> 
+    <script src="script.js"></script>
+</body>
+</html>

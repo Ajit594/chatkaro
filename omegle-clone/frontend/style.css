@@ -1,0 +1,62 @@
+/* Existing styles */
+body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; margin-top: 20px; background-color: #f4f4f4; color: #333; }
+#status { margin-bottom: 10px; font-style: italic; color: #555; }
+#chatBox { 
+    margin-top: 15px; 
+    border: 1px solid #ccc; 
+    width: 90%; 
+    max-width: 600px; 
+    background-color: #fff; 
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+}
+#messages { 
+    height: 300px; 
+    overflow-y: scroll; 
+    padding: 10px; 
+    border-bottom: 1px solid #eee; 
+    background-color: #f9f9f9;
+}
+#messages div { margin-bottom: 8px; padding: 8px; border-radius: 5px; line-height: 1.4; }
+
+#messages .you-message {  /* Renamed from my-message to you-message */
+    text-align: right; 
+    background-color: #dcf8c6; 
+    margin-left: auto; /* Aligns to right */
+    max-width: 70%; 
+}
+#messages .stranger-message { 
+    text-align: left; 
+    background-color: #e9e9eb; 
+    margin-right: auto; /* Aligns to left */
+    max-width: 70%;
+}
+#messages .system-message {
+    text-align: center;
+    font-style: italic;
+    color: #777;
+    background-color: transparent;
+    font-size: 0.9em;
+}
+
+#messageInput { width: calc(100% - 150px); padding: 10px; border: 1px solid #ccc; border-radius: 3px; }
+#sendBtn, #leaveChatBtn, #nextMatchBtn, #findMatchBtn { 
+    padding: 10px 15px; 
+    margin-left: 5px; 
+    border: none; 
+    border-radius: 3px; 
+    cursor: pointer; 
+    background-color: #007bff; 
+    color: white;
+}
+#sendBtn { background-color: #28a745; } /* Green for send */
+#leaveChatBtn { background-color: #dc3545; } /* Red for leave */
+#nextMatchBtn { background-color: #ffc107; color: #333; } /* Yellow for next */
+#findMatchBtn { background-color: #007bff; } /* Blue for find */
+
+button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+/* Ensure buttons are arranged nicely, perhaps in a control div */
+#controls { margin-top: 10px; } 
+/* You might need to wrap messageInput and sendBtn in a div for better layout if adding more buttons there */
