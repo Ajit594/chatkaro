@@ -24,48 +24,65 @@ io.on('connection', (socket) => {
   console.log(`[${new Date().toISOString()}] User ${socket.id} connected and set to idle. Total users: ${users.size}`);
 
   socket.on('findMatch', () => {
+    const timestamp = new Date().toISOString();
     const currentUser = users.get(socket.id);
+
     if (!currentUser) {
-        console.warn(`[${new Date().toISOString()}] 'findMatch' attempted by unknown user: ${socket.id}`);
-        socket.emit('actionError', { message: 'Authentication error. Please reconnect.' });
+        console.warn(`[${timestamp}] 'findMatch' attempt by unknown user: ${socket.id}`);
+        socket.emit('actionError', { message: 'User not recognized. Please reconnect.' });
         return;
     }
 
-    // Check if user is already searching or chatting
-    if (currentUser.status !== 'idle') {
-        console.warn(`[${new Date().toISOString()}] User ${socket.id} attempted to 'findMatch' but is already ${currentUser.status}.`);
-        socket.emit('actionError', { message: `Cannot start search, current status: ${currentUser.status}` });
+    if (currentUser.status === 'chatting') {
+        console.log(`[${timestamp}] User ${socket.id} (chatting) requested 'findMatch'. Ending current chat.`);
+        const partnerSocketId = currentUser.partner;
+        if (partnerSocketId) { // Check if partner exists
+            const partnerUser = users.get(partnerSocketId);
+            if (partnerUser) {
+                partnerUser.status = 'idle';
+                delete partnerUser.partner;
+                io.to(partnerSocketId).emit('partnerLeftChat', { reason: 'Partner started a new search.' });
+                console.log(`[${timestamp}] Notified user ${partnerSocketId} that ${socket.id} left chat (via findMatch). Partner set to idle.`);
+            }
+            delete currentUser.partner;
+        }
+        // currentUser.status will be set to 'searching' below.
+        // No explicit currentUser.status = 'idle'; needed here as it's immediately set to 'searching'
+    } else if (currentUser.status === 'searching') {
+        console.warn(`[${timestamp}] User ${socket.id} attempted to 'findMatch' but is already 'searching'.`);
+        socket.emit('actionError', { message: 'Already searching for a match. Please wait.' });
         return;
     }
+    // If user was 'idle' or 'chatting' (and now effectively 'idle' regarding partnership), they proceed.
 
     currentUser.status = 'searching';
-    console.log(`[${new Date().toISOString()}] User ${socket.id} is now searching for a match.`);
+    console.log(`[${timestamp}] User ${socket.id} is now searching for a match.`);
 
     let matchedPartnerId = null;
     // Iterate over all users to find a searching partner
-    for (const [partnerId, partnerUser] of users) {
+    for (const [partnerIdToMatch, partnerUserToMatch] of users) {
       // Check if the potential partner is not the current user and is also searching
-      if (partnerId !== socket.id && partnerUser.status === 'searching') {
+      if (partnerIdToMatch !== socket.id && partnerUserToMatch.status === 'searching') {
         // Match found
         currentUser.status = 'chatting';
-        partnerUser.status = 'chatting';
-        currentUser.partner = partnerId;
-        partnerUser.partner = socket.id;
+        partnerUserToMatch.status = 'chatting';
+        currentUser.partner = partnerIdToMatch;
+        partnerUserToMatch.partner = socket.id;
 
-        matchedPartnerId = partnerId; // Store the matched partner's ID
+        matchedPartnerId = partnerIdToMatch; // Store the matched partner's ID
 
         // Notify both users about the match
-        io.to(socket.id).emit('matchFound', { partnerId: partnerId });
-        io.to(partnerId).emit('matchFound', { partnerId: socket.id });
+        io.to(socket.id).emit('matchFound', { partnerId: partnerIdToMatch });
+        io.to(partnerIdToMatch).emit('matchFound', { partnerId: socket.id });
 
-        console.log(`[${new Date().toISOString()}] User ${socket.id} matched with user ${partnerId}.`);
+        console.log(`[${timestamp}] User ${socket.id} matched with user ${partnerIdToMatch}.`);
         break; // Exit the loop as a match has been found
       }
     }
 
     if (!matchedPartnerId) {
       // This log will be printed if the loop completes without finding a match
-      console.log(`[${new Date().toISOString()}] User ${socket.id} is searching, no match found yet.`);
+      console.log(`[${timestamp}] User ${socket.id} is searching, no match found yet.`);
     }
   });
 

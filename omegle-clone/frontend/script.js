@@ -51,8 +51,11 @@ function createPeerConnection(partnerSocketId) { // partnerSocketId is not direc
         }
 
         // Event handler for ICE candidates
+        // This is triggered by the RTCPeerConnection when it has a new ICE candidate to share.
+        // Both CALLER and CALLEE will use this to send their candidates to the other party via the server.
         peerConnection.onicecandidate = (event) => {
             if (event.candidate && partnerId) { 
+                // Send the local ICE candidate to the remote peer.
                 socket.emit('iceCandidate', { 
                     to: partnerId, 
                     candidate: event.candidate 
@@ -132,15 +135,39 @@ findMatchBtn.addEventListener('click', () => {
 });
 
 nextMatchBtn.addEventListener('click', () => {
-    addMessage('Looking for a new match...', 'system');
-    resetVideoCallUI(); // Reset video UI for next match
-    socket.emit('findMatch'); 
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] 'nextMatchBtn' clicked.`);
+
+    addMessage('Looking for a new match...', 'system'); // Keep this for immediate feedback
+
+    // If in an active video call, explicitly notify partner video is ending.
+    // Check based on peerConnection's existence or a key UI element like endVideoBtn being visible.
+    if (peerConnection && partnerId) { 
+        console.log(`[${timestamp}] Active video call detected. Emitting 'endVideoCall' before finding next match.`);
+        socket.emit('endVideoCall', { to: partnerId });
+    }
+
+    // Reset local UI, including video aspects
+    resetVideoCallUI(); // This stops local video, closes peerConnection, hides video UI
+    
+    // Reset text chat UI elements
     chatBoxDiv.style.display = 'none';
     messagesDiv.innerHTML = ''; 
-    nextMatchBtn.style.display = 'none';
+    nextMatchBtn.style.display = 'none'; // Hide itself
     leaveChatBtn.style.display = 'none';
+    // findMatchBtn.style.display = 'inline-block'; // Show "Find Match" - this will be shown by resetVideoCallUI if partnerId becomes null, or by text chat end logic.
+                                                // For "Next" it's better to go directly to searching.
+
     statusDiv.textContent = 'Searching for a new match...';
-    partnerId = null; 
+    
+    // partnerId is cleared by server on successful 'findMatch' from 'chatting' state,
+    // or by client if 'leaveChat' was used. For now, client keeps partnerId until server confirms new state.
+    // Let's clear it here to ensure UI is consistent with "searching" state immediately.
+    // const oldPartnerId = partnerId; // Keep if needed for any final message to server.
+    // partnerId = null; // No, don't nullify partnerId here. Server will handle partner state.
+
+    socket.emit('findMatch'); // Server will handle leaving current chat & finding new.
+    console.log(`[${timestamp}] Emitted 'findMatch' for next partner.`);
 });
 
 leaveChatBtn.addEventListener('click', () => {
@@ -200,54 +227,59 @@ async function startLocalMedia() {
     }
 }
 
+// CALLER: When the 'Request Video Call' button is clicked...
 requestVideoBtn.addEventListener('click', async () => {
     if (!partnerId) {
         addMessage('Cannot start video call, no partner found.', 'system');
         return;
     }
+    // CALLER: Start local media first.
     const mediaStarted = await startLocalMedia();
     if (mediaStarted && partnerId) {
-        socket.emit('videoCallRequest', { to: partnerId }); // Inform partner
+        // CALLER: Emitting request to partner.
+        socket.emit('videoCallRequest', { to: partnerId }); 
         statusDiv.textContent = 'Video call requested...';
-        // UI already updated by startLocalMedia success
+        // UI updates (local video visible, end/mute buttons shown) are handled by startLocalMedia success.
     } else if (!mediaStarted) {
         // Error already handled by startLocalMedia
         statusDiv.textContent = 'Failed to start local video. Cannot request video call.';
     }
 });
 
+// CALLEE: When the 'Accept Video Call' button is clicked...
 acceptVideoBtn.addEventListener('click', async () => {
     const timestamp = new Date().toISOString();
     console.log(`[${timestamp}] 'acceptVideoBtn' clicked.`);
 
-    if (!partnerId) { // partnerId should be set from 'videoCallRequested' or earlier text match
+    if (!partnerId) { // partnerId should be set by 'videoCallRequested' handler
         addMessage('Error: Partner ID not found to accept call.', 'system');
         return;
     }
 
-    const mediaStarted = await startLocalMedia(); // Get local media first
+    // CALLEE: Start local media.
+    const mediaStarted = await startLocalMedia(); 
     if (!mediaStarted) {
         statusDiv.textContent = 'Failed to start local media. Cannot accept video call.';
         acceptVideoBtn.style.display = 'inline-block'; // Allow trying again, or hide
         return;
     }
 
-    // At this point, localStream is available.
-    // createPeerConnection will add localStream tracks.
-    if (!createPeerConnection(partnerId)) { // Pass partnerId to createPeerConnection
+    // CALLEE: Create its peer connection. localStream tracks are added inside createPeerConnection.
+    if (!createPeerConnection(partnerId)) { 
          addMessage('Failed to setup video connection. Please try again.', 'system');
          return;
     }
     
-    // Notify the original caller that the call was accepted.
-    // The original caller will then create and send the offer.
+    // CALLEE: Notify the original caller that the call was accepted.
+    // The original caller (who received 'videoCallAccepted') will then create and send the SDP offer.
     socket.emit('videoCallAccepted', { to: partnerId }); 
     console.log(`[${timestamp}] Emitted 'videoCallAccepted' to ${partnerId}.`);
 
     statusDiv.textContent = 'Video call accepted. Waiting for connection...';
+    // CALLEE: Update UI after accepting.
     acceptVideoBtn.style.display = 'none';
     requestVideoBtn.style.display = 'none';
-    endVideoBtn.style.display = 'inline-block'; // Show end call, mute buttons
+    endVideoBtn.style.display = 'inline-block'; 
     muteAudioBtn.style.display = 'inline-block';
     muteVideoBtn.style.display = 'inline-block';
 });
@@ -363,6 +395,7 @@ endVideoBtn.addEventListener('click', () => {
     }
 });
 
+// BOTH CALLER/CALLEE: Received an ICE candidate from the partner.
 socket.on('iceCandidateReceived', async (data) => {
     const timestamp = new Date().toISOString();
     // console.log(`[${timestamp}] Received 'iceCandidateReceived' from ${data.from}, candidate:`, data.candidate); // Can be very noisy
@@ -376,6 +409,7 @@ socket.on('iceCandidateReceived', async (data) => {
 
     if (data.candidate) {
         try {
+            // Add the received ICE candidate to the local RTCPeerConnection.
             await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
             // console.log(`[${timestamp}] ICE candidate added successfully.`); // Also noisy
         } catch (error) {
@@ -385,6 +419,7 @@ socket.on('iceCandidateReceived', async (data) => {
     }
 });
 
+// CALLER: Received confirmation that the call request was accepted by the CALLEE.
 socket.on('videoCallAccepted', async (data) => {
     const timestamp = new Date().toISOString();
     const accepterId = data.from; // This is our partnerId
@@ -397,24 +432,27 @@ socket.on('videoCallAccepted', async (data) => {
         return;
     }
 
-    // Now create the peer connection and the offer
+    // CALLER: Now that call is accepted, create the peer connection.
     if (!createPeerConnection(accepterId)) { // Create PC for the partner who accepted
         addMessage('Failed to setup video connection. Please try again.', 'system');
         return;
     }
 
     try {
+        // CALLER: Create the SDP offer.
         const offer = await peerConnection.createOffer();
         console.log(`[${timestamp}] Offer created by caller.`);
 
+        // CALLER: Set the local description with the offer.
         await peerConnection.setLocalDescription(offer);
         console.log(`[${timestamp}] Local description set with offer by caller.`);
 
+        // CALLER: Send the offer to the CALLEE.
         socket.emit('videoOffer', { to: accepterId, offer: offer });
         console.log(`[${timestamp}] Emitted 'videoOffer' to ${accepterId}.`);
 
         statusDiv.textContent = 'Video offer sent. Waiting for answer...';
-        // UI for end/mute buttons should already be visible from startLocalMedia()
+        // UI for end/mute buttons should already be visible from startLocalMedia() success.
     } catch (error) {
         console.error(`[${timestamp}] Error creating or sending video offer:`, error);
         addMessage('Error starting video call.', 'system');
@@ -422,68 +460,72 @@ socket.on('videoCallAccepted', async (data) => {
     }
 });
 
+// CALLEE: Received a video call request from the CALLER.
 socket.on('videoCallRequested', async (data) => {
     const timestamp = new Date().toISOString();
     console.log(`[${timestamp}] Received 'videoCallRequested' from ${data.from}`);
     
-    // Assuming partnerId is already set from text chat match.
-    // If not, you might need to set it: partnerId = data.from;
-
-    if (socket.id === data.from) { // Should not happen if server logic is correct
+    // partnerId is set by 'matchFound' event. This check ensures we have a partner.
+    if (socket.id === data.from) { 
         console.warn(`[${timestamp}] Received 'videoCallRequested' from self. Ignoring.`);
         return;
     }
+     if (partnerId !== data.from) {
+        console.warn(`[${timestamp}] Received 'videoCallRequested' from ${data.from}, but current partner is ${partnerId}. Ignoring.`);
+        return;
+    }
 
-    // Update UI to show incoming call
+
+    // CALLEE: Update UI to show incoming call and allow accepting.
     statusDiv.textContent = `Incoming video call from partner...`;
     videoChatArea.style.display = 'block';
     requestVideoBtn.style.display = 'none';
-    acceptVideoBtn.style.display = 'inline-block'; // Show accept button
-    endVideoBtn.style.display = 'none'; // Hide end call until accepted
+    acceptVideoBtn.style.display = 'inline-block'; 
+    endVideoBtn.style.display = 'none'; 
     muteAudioBtn.style.display = 'none';
     muteVideoBtn.style.display = 'none';
-
-    // Optional: Add a timeout to auto-reject if not accepted? (More advanced)
 });
 
+// CALLEE: Received an SDP offer from the CALLER (after CALLER got 'videoCallAccepted').
 socket.on('videoOfferReceived', async (data) => {
     const timestamp = new Date().toISOString();
     console.log(`[${timestamp}] Received 'videoOfferReceived' from ${data.from}`);
 
     if (!localStream) {
+        // This implies the CALLEE clicked "Accept" but local media failed to start.
         console.error(`[${timestamp}] Received video offer but local stream is not ready. Ignoring offer.`);
         addMessage('Error: Local media not ready to receive video offer.', 'system');
-        // Potentially, auto-start local media here if desired, or ensure UI flow prevents this.
-        // For now, if acceptVideoBtn click is the only way to get here, localStream should be ready.
         return; 
     }
 
-    // Ensure peerConnection is created, typically after local media is confirmed.
-    // This might have been created if this client clicked "Accept".
-    // If this client *made* the request and is now getting an offer (less common for this event name, but for robustness):
+    // CALLEE: Ensure peerConnection is created. It should have been by 'acceptVideoBtn' click.
     if (!peerConnection) {
-        console.log(`[${timestamp}] PeerConnection not found, creating one for incoming offer.`);
-        if (!createPeerConnection(data.from)) { // Pass offerer's ID
+        console.log(`[${timestamp}] PeerConnection not found, creating one for incoming offer (should have been created on accept).`);
+        if (!createPeerConnection(data.from)) { 
             addMessage('Failed to setup video connection for offer. Please try again.', 'system');
             return;
         }
     }
     
     try {
+        // CALLEE: Set the received offer as the remote description.
         await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
         console.log(`[${timestamp}] Remote description set from offer.`);
 
+        // CALLEE: Create an SDP answer.
         const answer = await peerConnection.createAnswer();
         console.log(`[${timestamp}] Answer created.`);
 
+        // CALLEE: Set the local description with the answer.
         await peerConnection.setLocalDescription(answer);
         console.log(`[${timestamp}] Local description set with answer.`);
 
+        // CALLEE: Send the answer back to the CALLER.
         socket.emit('videoAnswer', { to: data.from, answer: answer });
         console.log(`[${timestamp}] Emitted 'videoAnswer' to ${data.from}.`);
 
-        statusDiv.textContent = 'Video call connected.'; // Or "Video call in progress"
-        // Ensure video controls are appropriately visible
+        statusDiv.textContent = 'Video call connected.'; 
+        // CALLEE: UI update for connected state.
         endVideoBtn.style.display = 'inline-block';
         muteAudioBtn.style.display = 'inline-block';
         muteVideoBtn.style.display = 'inline-block';
@@ -493,10 +535,38 @@ socket.on('videoOfferReceived', async (data) => {
     } catch (error) {
         console.error(`[${timestamp}] Error handling video offer or creating answer:`, error);
         addMessage('Error connecting video call.', 'system');
-        // Consider cleanup or emitting an error to partner
     }
 });
 
+// CALLER: Received an SDP answer from the CALLEE.
+socket.on('videoAnswerReceived', async (data) => {
+    const timestamp = new Date().toISOString();
+    const answererId = data.from; // This is our partnerId
+    console.log(`[${timestamp}] Received 'videoAnswerReceived' from ${answererId}.`);
+
+    if (!peerConnection || !peerConnection.localDescription || peerConnection.localDescription.type !== 'offer') {
+        console.error(`[${timestamp}] Received video answer but peerConnection not ready or no local offer set. Ignoring answer.`);
+        // This state should ideally not be reached if the flow is correct.
+        return;
+    }
+    
+    try {
+        // CALLER: Set the received answer as the remote description.
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+        console.log(`[${timestamp}] Remote description set with answer by caller.`);
+        
+        statusDiv.textContent = 'Video call connected.'; 
+        // UI for end/mute buttons should already be visible.
+        // Remote video will appear via the peerConnection.ontrack event.
+
+    } catch (error) {
+        console.error(`[${timestamp}] Error setting remote description from answer:`, error);
+        addMessage('Error connecting video call after answer.', 'system');
+    }
+});
+
+
+// BOTH CALLER/CALLEE: Received notification that the video call has ended from the partner.
 socket.on('videoCallEnded', (data) => {
     const timestamp = new Date().toISOString();
     console.log(`[${timestamp}] Received 'videoCallEnded' from ${data.from}.`);
