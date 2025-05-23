@@ -19,6 +19,22 @@
         <button id="sendBtn">Send</button>
         <button id="leaveChatBtn" style="display: none;">Leave Chat</button>
     </div>
+
+    <div id="videoChatArea" style="display: none;">
+        <h2>Video Chat</h2>
+        <div id="videoStreams">
+            <video id="localVideo" autoplay muted playsinline></video>
+            <video id="remoteVideo" autoplay playsinline></video>
+        </div>
+        <div id="videoControls">
+            <button id="requestVideoBtn">Request Video Call</button>
+            <button id="acceptVideoBtn" style="display: none;">Accept Video Call</button>
+            <button id="endVideoBtn" style="display: none;">End Video Call</button>
+            <button id="muteAudioBtn" style="display: none;">Mute Audio</button>
+            <button id="muteVideoBtn" style="display: none;">Mute Video</button>
+        </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script> 
     <script src="script.js"></script>
 </body>
