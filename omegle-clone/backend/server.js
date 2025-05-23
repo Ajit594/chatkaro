@@ -144,6 +144,110 @@ io.on('connection', (socket) => {
     users.delete(socket.id);
     console.log(`[${timestamp}] User ${socket.id} disconnected. Total users: ${users.size}`);
   });
+
+  // WebRTC Signaling Event Handlers
+  socket.on('videoCallRequest', (data) => {
+    const timestamp = new Date().toISOString();
+    const requesterId = socket.id;
+    const recipientId = data.to;
+
+    const requester = users.get(requesterId);
+    const recipient = users.get(recipientId);
+
+    if (requester && requester.partner === recipientId && recipient && recipient.partner === requesterId) {
+        console.log(`[${timestamp}] Relaying 'videoCallRequest' from ${requesterId} to ${recipientId}`);
+        io.to(recipientId).emit('videoCallRequested', { from: requesterId });
+    } else {
+        console.warn(`[${timestamp}] Invalid 'videoCallRequest' from ${requesterId} to ${recipientId}. Partnership not valid or users not found.`);
+        // Optionally emit an error back to requester:
+        // socket.emit('actionError', { message: 'Could not send video call request: partner not found or invalid.' });
+    }
+  });
+
+  socket.on('videoCallAccepted', (data) => {
+    const timestamp = new Date().toISOString();
+    const accepterId = socket.id;
+    const originalRequesterId = data.to;
+
+    const accepter = users.get(accepterId);
+    const originalRequester = users.get(originalRequesterId);
+
+    if (accepter && accepter.partner === originalRequesterId && originalRequester && originalRequester.partner === accepterId) {
+        console.log(`[${timestamp}] Relaying 'videoCallAccepted' from ${accepterId} to ${originalRequesterId}`);
+        io.to(originalRequesterId).emit('videoCallAccepted', { from: accepterId });
+    } else {
+        console.warn(`[${timestamp}] Invalid 'videoCallAccepted' from ${accepterId} to ${originalRequesterId}. Partnership not valid.`);
+    }
+  });
+
+  socket.on('videoOffer', (data) => {
+    const timestamp = new Date().toISOString();
+    const offererId = socket.id;
+    const recipientId = data.to;
+    const sdpOffer = data.offer;
+
+    const offerer = users.get(offererId);
+    const recipient = users.get(recipientId);
+
+    if (offerer && offerer.partner === recipientId && recipient && recipient.partner === offererId) {
+        console.log(`[${timestamp}] Relaying 'videoOffer' from ${offererId} to ${recipientId}`);
+        io.to(recipientId).emit('videoOfferReceived', { from: offererId, offer: sdpOffer });
+    } else {
+        console.warn(`[${timestamp}] Invalid 'videoOffer' from ${offererId} to ${recipientId}. Partnership not valid.`);
+    }
+  });
+
+  socket.on('videoAnswer', (data) => {
+    const timestamp = new Date().toISOString();
+    const answererId = socket.id;
+    const recipientId = data.to; // Original offerer
+    const sdpAnswer = data.answer;
+
+    const answerer = users.get(answererId);
+    const recipient = users.get(recipientId);
+
+    if (answerer && answerer.partner === recipientId && recipient && recipient.partner === answererId) {
+        console.log(`[${timestamp}] Relaying 'videoAnswer' from ${answererId} to ${recipientId}`);
+        io.to(recipientId).emit('videoAnswerReceived', { from: answererId, answer: sdpAnswer });
+    } else {
+        console.warn(`[${timestamp}] Invalid 'videoAnswer' from ${answererId} to ${recipientId}. Partnership not valid.`);
+    }
+  });
+
+  socket.on('iceCandidate', (data) => {
+    const timestamp = new Date().toISOString();
+    const senderId = socket.id;
+    const recipientId = data.to;
+    const candidate = data.candidate;
+
+    const sender = users.get(senderId);
+    const recipient = users.get(recipientId);
+
+    if (sender && sender.partner === recipientId && recipient && recipient.partner === senderId) {
+        // console.log(`[${timestamp}] Relaying 'iceCandidate' from ${senderId} to ${recipientId}`); // Can be very noisy
+        io.to(recipientId).emit('iceCandidateReceived', { from: senderId, candidate: candidate });
+    } else {
+        // console.warn(`[${timestamp}] Invalid 'iceCandidate' from ${senderId} to ${recipientId}. Partnership not valid.`); // Can be noisy
+    }
+  });
+
+  socket.on('endVideoCall', (data) => {
+    const timestamp = new Date().toISOString();
+    const initiatorId = socket.id;
+    const partnerId = data.to;
+
+    const initiator = users.get(initiatorId);
+    const partner = users.get(partnerId);
+
+    if (initiator && initiator.partner === partnerId && partner && partner.partner === initiatorId) {
+        console.log(`[${timestamp}] Relaying 'endVideoCall' from ${initiatorId} to ${partnerId}`);
+        io.to(partnerId).emit('videoCallEnded', { from: initiatorId });
+        // Server doesn't change its own state here, text chat partnership is separate
+    } else {
+        console.warn(`[${timestamp}] Invalid 'endVideoCall' from ${initiatorId} to ${partnerId}. Partnership not valid.`);
+    }
+  });
+
 });
 
 server.listen(port, () => {
